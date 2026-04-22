@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>주일학교 출석부</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#56ab2f">
+    <link rel="apple-touch-icon" href="icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js" async defer></script>
+
+    <style>
+        body { margin: 0; font-family: 'Noto Sans KR', sans-serif; background-color: #f4f7f6; display: flex; justify-content: center; }
+        #app-container { width: 100%; max-width: 480px; background-color: #fff; min-height: 100vh; position: relative; }
+        
+        .header { background: linear-gradient(135deg, #a8e063 0%, #56ab2f 100%); padding: 30px 20px 20px; color: white; text-align: center; border-bottom-left-radius: 20px; border-bottom-right-radius: 20px; }
+        .header h2 { margin: 0; font-size: 1.5em; font-weight: 700; }
+        .current-date-display { margin-top: 10px; font-size: 1.1em; font-weight: 500; background: rgba(255,255,255,0.2); display: inline-block; padding: 5px 15px; border-radius: 20px; cursor: pointer; }
+        
+        /* 구글 연동 버튼 스타일 */
+        .google-sync-btn { margin-top: 15px; background: white; color: #555; border: none; padding: 8px 15px; border-radius: 20px; font-size: 0.85em; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .google-sync-btn img { width: 14px; height: 14px; }
+
+        .list-container { padding: 20px; padding-bottom: 90px; }
+        .attendance-summary { display: flex; justify-content: space-between; margin-bottom: 15px; font-weight: 700; color: #555; font-size: 0.9em; }
+        .student-card { background: #fff; border: 1px solid #eee; border-radius: 12px; padding: 15px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
+        .student-info { flex: 1; }
+        .student-name { font-weight: 700; color: #333; font-size: 1.1em; }
+        .status-badge { font-size: 0.8em; padding: 3px 8px; border-radius: 5px; margin-left: 5px; }
+        .badge-present { background: #e8f5e9; color: #2e7d32; }
+        .badge-absent { background: #ffebee; color: #c62828; }
+        
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(3px); }
+        .modal-content { background: white; width: 85%; max-width: 350px; padding: 25px; border-radius: 20px; }
+        .modal-title { font-weight: 700; margin-bottom: 15px; text-align: center; font-size: 1.2em; }
+        
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; text-align: center; margin-bottom: 15px; }
+        .calendar-day-head { font-weight: 700; font-size: 0.8em; color: #999; padding: 5px 0; }
+        .calendar-day-head:first-child { color: #f44336; }
+        .calendar-cell { padding: 10px 0; border-radius: 8px; cursor: pointer; font-size: 0.9em; position: relative; height: 35px; display: flex; flex-direction: column; align-items: center; }
+        .calendar-cell.selected { background: #56ab2f; color: white; font-weight: 700; }
+        
+        /* 구글 캘린더 일정이 있을 때 표시되는 점 */
+        .event-dot { width: 5px; height: 5px; background-color: #4285F4; border-radius: 50%; margin-top: 2px; display: none; }
+        .has-event .event-dot { display: block; }
+        
+        .btn-row { display: flex; gap: 10px; margin-top: 10px; }
+        .btn { flex: 1; padding: 12px; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; }
+        .btn-primary { background: #56ab2f; color: white; }
+        .btn-secondary { background: #eee; color: #555; }
+        .fab { position: fixed; bottom: 25px; right: 25px; width: 56px; height: 56px; background: #FF9800; color: white; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 24px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); border: none; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <div class="header">
+        <h2>🌱 주일학교 출석부</h2>
+        <div class="current-date-display" id="dateDisplay" onclick="openCalendar()">2026-04-22 (수)</div>
+        <br>
+        <button class="google-sync-btn" onclick="handleAuthClick()">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google">
+            개인 캘린더 연동
+        </button>
+    </div>
+
+    <div class="list-container">
+        <div class="attendance-summary" id="attendanceSummary">
+            <span>참석: 0명</span> <span>결석: 0명</span>
+        </div>
+        <div id="studentList"></div>
+    </div>
+    <button class="fab" onclick="alert('학생 추가 기능 (이전 코드와 동일)')">+</button>
+</div>
+
+<div class="modal" id="calendarModal">
+    <div class="modal-content">
+        <div class="modal-title">날짜 선택</div>
+        <div id="calendarMonthTitle" style="text-align: center; margin-bottom: 10px; font-weight: bold;"></div>
+        <div class="calendar-grid" id="calendarGrid"></div>
+        <div class="btn-row">
+            <button class="btn btn-secondary" style="width: 100%;" onclick="closeModal('calendarModal')">닫기</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ==========================================
+    // 💡 아래의 CLIENT_ID에 발급받은 값을 넣어야 작동합니다.
+    const CLIENT_ID = '여기에_클라이언트_ID를_넣으세요.apps.googleusercontent.com';
+    // ==========================================
+    
+    const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest';
+    const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
+    let tokenClient;
+    let gapiInited = false;
+    let gisInited = false;
+    let googleEvents = []; // 가져온 구글 일정을 저장할 배열
+
+    // 구글 API 초기화
+    function gapiLoaded() { gapi.load('client', initializeGapiClient); }
+    async function initializeGapiClient() {
+        await gapi.client.init({ discoveryDocs: [DISCOVERY_DOC] });
+        gapiInited = true;
+    }
+    function gisLoaded() {
+        tokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: CLIENT_ID,
+            scope: SCOPES,
+            callback: '', // 나중에 정의
+        });
+        gisInited = true;
+    }
+
+    // 연동 버튼 클릭 시 실행
+    function handleAuthClick() {
+        if (!CLIENT_ID || CLIENT_ID.includes('여기에')) {
+            alert('구글 연동을 위해 코드 내에 CLIENT_ID를 먼저 설정해주세요!');
+            return;
+        }
+        tokenClient.callback = async (resp) => {
+            if (resp.error !== undefined) { throw (resp); }
+            alert('캘린더 연동이 완료되었습니다.');
+            await fetchGoogleEvents();
+        };
+        if (gapi.client.getToken() === null) { tokenClient.requestAccessToken({prompt: 'consent'}); } 
+        else { tokenClient.requestAccessToken({prompt: ''}); }
+    }
+
+    // 구글 캘린더 일정 가져오기 (최근 한 달 기준)
+    async function fetchGoogleEvents() {
+        try {
+            const now = new Date();
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+            const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
+            
+            const response = await gapi.client.calendar.events.list({
+                'calendarId': 'primary',
+                'timeMin': startOfMonth,
+                'timeMax': endOfMonth,
+                'showDeleted': false,
+                'singleEvents': true,
+                'orderBy': 'startTime',
+            });
+            
+            const events = response.result.items;
+            googleEvents = events.map(e => e.start.date || e.start.dateTime.split('T')[0]); // 날짜만 추출
+            
+            if(document.getElementById('calendarModal').style.display === 'flex') {
+                renderCalendar(); // 달력이 열려있다면 즉시 점 표시 새로고침
+            }
+        } catch (err) {
+            console.error('일정을 불러오는 중 에러 발생:', err);
+        }
+    }
+
+    // 기존 출석부 변수 및 함수 (기본 틀 유지)
+    let currentSelectedDate = new Date().toISOString().split('T')[0];
+
+    function openCalendar() {
+        document.getElementById('calendarModal').style.display = 'flex';
+        renderCalendar();
+    }
+
+    function renderCalendar() {
+        const grid = document.getElementById('calendarGrid');
+        grid.innerHTML = '';
+        const dayHeads = ['일', '월', '화', '수', '목', '금', '토'];
+        dayHeads.forEach(d => grid.innerHTML += `<div class="calendar-day-head">${d}</div>`);
+
+        const now = new Date();
+        document.getElementById('calendarMonthTitle').innerText = `${now.getFullYear()}년 ${now.getMonth() + 1}월`;
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+        for (let i = 0; i < start.getDay(); i++) grid.innerHTML += '<div></div>';
+
+        for (let d = 1; d <= last.getDate(); d++) {
+            const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            const isSelected = dateStr === currentSelectedDate;
+            
+            // 구글 일정이 있는 날짜인지 확인
+            const hasEvent = googleEvents.includes(dateStr);
+            
+            grid.innerHTML += `
+                <div class="calendar-cell ${isSelected ? 'selected' : ''} ${hasEvent ? 'has-event' : ''}" onclick="selectDate('${dateStr}')">
+                    ${d}
+                    <div class="event-dot"></div>
+                </div>`;
+        }
+    }
+
+    function selectDate(dateStr) {
+        currentSelectedDate = dateStr;
+        const d = new Date(dateStr);
+        const week = ['일', '월', '화', '수', '목', '금', '토'];
+        document.getElementById('dateDisplay').innerText = `${dateStr} (${week[d.getDay()]})`;
+        closeModal('calendarModal');
+        // 출석 데이터 다시 렌더링 함수 호출 위치 (생략)
+    }
+
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+    window.onload = () => { gapiLoaded(); gisLoaded(); };
+</script>
+</body>
+</html>
